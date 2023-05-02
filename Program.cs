@@ -99,6 +99,7 @@ namespace WebAPI
                     }
                 }
                 var prefixes = new List<string>() { $"http://*:{Port}/" };
+                string contentType = "text/html";
 
                 // Create a listener.
                 HttpListener listener = new HttpListener();
@@ -131,7 +132,7 @@ namespace WebAPI
                     String[] queryStringArray = url.Split('/');
                     try
                     {
-                        string respval = "Idle";
+                        string respval = "<HTML><BODY>Idle</BODY></HTML>";
                         switch (request.HttpMethod)
                         {
                             case "POST":
@@ -144,6 +145,7 @@ namespace WebAPI
                                     {
                                         respval = "";
                                     }
+                                    contentType = "text/plain";
                                 }
                                 break;
                             default:
@@ -390,7 +392,7 @@ namespace WebAPI
                         response.StatusCode = (int)HttpStatusCode.OK;
                         // Allow cross origin requests
                         response.AddHeader("Access-Control-Allow-Origin", "null");
-                        response.ContentType = "text/plain";
+                        response.ContentType = contentType;
                         // Construct a response.
                         byte[] buffer = System.Text.Encoding.UTF8.GetBytes(respval);
                         // Get a response stream and write the response to it.
