@@ -3,7 +3,7 @@
 # This Script requires
 #  3CX Web-Api (https://github.com/adn77/3cx-web-API)
 #  curl
-#  jq 
+#  jq
 
 declare -A users
 
@@ -50,7 +50,7 @@ done
 
 echo "Requesting status updates from MS Teams for"
 echo " ${userlist}"
-(sleep 10 ; ${TEAMS_NOTIFY}${userlist} > /dev/null )&
+(sleep 5 ; ${TEAMS_NOTIFY}${userlist} > /dev/null )&
 
 update=$(date +%s)
 
@@ -61,10 +61,13 @@ while read line ; do
 #	echo $logdate - $line
 	# exit if the API server received a /stop command
 	if [[ "$line" =~ "Server Stop" ]] ; then
+		echo "${logdate} - deleting subscription"
 		${TEAMS_NOTIFY} delete
+		echo "${logdate} - stopping server"
 		exit 0
 	# process notification lifecycleEvent
 	elif [[ "$line" =~ "subscriptionRemoved" ]] ; then
+		echo "${logdate} - subscription removed - ${line}"
 		echo "${logdate} - (re)creating subscription"
 		${TEAMS_NOTIFY} "${userlist}"
 	# process notification lifecycleEvent
@@ -73,14 +76,14 @@ while read line ; do
 		echo "${logdate} - reauthorizing subscription ${id}"
 		out=$(${TEAMS_NOTIFY} reauthorize "${id}")
 		if [[ "$out" =~ "Error" ]] ; then
-			echo "(re)creating subscription"
+			echo "${logdate} - (re)creating subscription"
 			${TEAMS_NOTIFY} "${userlist}"
 		else
-			echo "$out"
+			echo "${logdate} - recreated subscription: ${out}"
 		fi
 	# process notification lifecycleEvent
 	elif [[ "$line" =~ "missed" ]] ; then
-		echo "${logdate} - missed  lifecycleEvent - ${line}"
+		echo "${logdate} - missed lifecycleEvent - ${line}"
 		${TEAMS_NOTIFY} "${userlist}"
 	# process notification webhook
 	elif [[ "$line" =~ "subscriptionId" ]] ; then
@@ -110,24 +113,24 @@ while read line ; do
 						# retrieve 3CX availability status
 						localstatus=$(curl -s http://localhost:${WEB_API_PORT}/showstatus/${extensions[${user}]})
 						if [[ "$status" =~ "Available" ]] && [[ "${localstatus}" =~ "Away" ]] ; then
-							echo "${logdate} - Setting extension <${extensions[${user}]}> Available (was ${localstatus##*=})"
+							echo "${logdate} - Notify: Setting user <${user}> (${extensions[${user}]}) Available on 3CX (was ${localstatus##*=})"
 							curl -s http://localhost:${WEB_API_PORT}/setstatus/${extensions[${user}]}/avail > /dev/null
 						elif [[ "$status" =~ "Busy"|"DoNotDisturb"|"BeRightBack"|"Offline" ]] && [[ "${localstatus}" =~ "Available" ]] ; then
-							echo "${logdate} - Setting extension <${extensions[${user}]}> Away (was ${localstatus##*=})"
+							echo "${logdate} - Notify: Setting user <${user}> (${extensions[${user}]}) Away on 3CX (was ${localstatus##*=})"
 							curl -s http://localhost:${WEB_API_PORT}/setstatus/${extensions[${user}]}/away > /dev/null
 						else
-							echo "${logdate} - UPN: ${user} - Ext: ${extensions[${user}]} - Teams: $status - 3cx: ${localstatus##*=}"
+							echo "${logdate} - Notify: Upn: ${user} - Ext: ${extensions[${user}]} - Teams: $status - 3cx: ${localstatus##*=}"
 						fi
 					fi
 				else
-					echo "${logdate} - User <${user}> is not configured with an extension"
+					echo "${logdate} - Notify: Upn: ${user} is not configured with an extension"
 				fi
 			else
-				echo "${logdate} - UserID <${userid}> not found in subscription list"
+				echo "${logdate} - Notify: Upn: ${userid} not found in subscription list"
 			fi
 		else
-			echo "${logdate} - Error parsing response JSON:"
-			echo $json
+			echo "${logdate} - Notify: Error parsing response JSON..."
+			echo "${logdate} - ${json}"
 		fi
 	# This sets the teams status to busy in case a call is currently placed
 	# !!! For this to work, http://localhost:${WEB_API_PORT}/showallcalls must be called periodically
@@ -140,12 +143,12 @@ while read line ; do
 		if [ -n "${users[$ext]}" ] ; then
 			# has there been a state change during the last refresh period?
 			if [ $((now - statechange[$ext])) -gt $((15 * refresh / 10)) -a ! "$ext" = "925" ] ; then
-				echo "${logdate} - Setting user <${users[$ext]}> busy"
-				${TEAMS_PRESENCE} "${users[$ext]}" busy
+				echo "${logdate} - Polling: Setting user <${users[$ext]}> (${ext}) Busy on Teams"
+				${TEAMS_PRESENCE} "${users[$ext]}" busy > /dev/null
 			fi
 			statechange[$ext]=$now
-		else
-			echo "${logdate} - <${ext}> is in a call but didn't find it in the user list"
+#		else
+#			echo "${logdate} - Polling: <${ext}> is in a call but didn't find it in the user list"
 		fi
 	# the showallcalls command always prints <html>
 	elif [[ "$line" =~ "<html>" ]] ; then
@@ -153,9 +156,13 @@ while read line ; do
 		for i in "${!statechange[@]}" ; do
 			# extension is not currently in a call, but the time it was is less than 1.5 * refresh period
 			if [ -z "$(echo $line | grep "DN=${i}")" -a $((now - statechange[$i])) -lt $((15 * refresh / 10)) ] ; then
-				echo "${logdate} - Setting user <${users[$i]}> available"
-				${TEAMS_PRESENCE} "${users[$i]}" available
+				echo "${logdate} - Polling: Setting user <${users[$i]}> (${i}) Available on Teams"
+				${TEAMS_PRESENCE} "${users[$i]}" available > /dev/null
 			fi
 		done
+	else
+		if ! [[ "$line" =~ CURRENT_STATUS|Call|Ringing|Away|Available ]] && [ -n "$line" ] ; then
+			echo "${logdate} - Unknown: ${line}"
+		fi
 	fi
 done < <(${WEB_API} ${WEB_API_PORT})
