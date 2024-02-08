@@ -8,11 +8,14 @@
 declare -A users
 
 # extension to O365 user ID mapping
-users["1234"]='user1@example.org'
-users["4711"]='user2@example.org'
+users["101"]='user1@example.org'
+users["102"]='user2@example.org'
 
 # status refresh time in seconds
 refresh=60
+
+# renew Teams subscription every x seconds
+subscription_refresh=1800
 
 # regex to match state and extension
 busy_match="^\s*ID=.*;S=(Dialing|Connected);DN=(.*);Queue_Name="
@@ -51,14 +54,37 @@ done
 echo "Requesting status updates from MS Teams for"
 echo " ${userlist}"
 (sleep 5 ; ${TEAMS_NOTIFY}${userlist} > /dev/null )&
+subscription_date=$(date +%s)
 
-update=$(date +%s)
 
 # loop over StdOutput of the call processing API
 while read line ; do
 	now=$(date +%s)
-	logdate=$(date -u +'%FT%TZ')
+	logdate=$(date +'%FT%T')
 #	echo $logdate - $line
+
+	# Teams subscriptions tend to get lost every now and then
+	if [ $((now - subscription_date)) -gt $subscription_refresh ] ; then
+		subscription_date=$now
+		id=$(${TEAMS_NOTIFY} | cut -d' ' -f1)
+		# check if the subscription still exists
+		if [ -z "${id}" ] ; then
+			echo "${logdate} - lost subscription!!!"
+			echo "${logdate} - (re)creating subscription"
+			${TEAMS_NOTIFY} "${userlist}"
+		# proactively renew subscription before it expires
+		else
+			echo "${logdate} - proactively reauthorizing subscription ${id} after ${subscription_refresh} seconds"
+			out=$(${TEAMS_NOTIFY} reauthorize "${id}")
+			if [[ "$out" =~ "Error" ]] ; then
+				echo "${logdate} - (re)creating subscription"
+				${TEAMS_NOTIFY} "${userlist}"
+			else
+				echo "${logdate} - recreated subscription: ${out}"
+			fi
+		fi
+	fi
+
 	# exit if the API server received a /stop command
 	if [[ "$line" =~ "Server Stop" ]] ; then
 		echo "${logdate} - deleting subscription"
@@ -72,8 +98,8 @@ while read line ; do
 		${TEAMS_NOTIFY} "${userlist}"
 	# process notification lifecycleEvent
 	elif [[ "$line" =~ "reauthorizationRequired" ]] ; then
+		echo "${logdate} - reauthorization required"
 		id=$(echo "${line}" | jq -r '.value[0].subscriptionId')
-		echo "${logdate} - reauthorizing subscription ${id}"
 		out=$(${TEAMS_NOTIFY} reauthorize "${id}")
 		if [[ "$out" =~ "Error" ]] ; then
 			echo "${logdate} - (re)creating subscription"
@@ -119,14 +145,14 @@ while read line ; do
 							echo "${logdate} - Notify: Setting user <${user}> (${extensions[${user}]}) Away on 3CX (was ${localstatus##*=})"
 							curl -s http://localhost:${WEB_API_PORT}/setstatus/${extensions[${user}]}/away > /dev/null
 						else
-							echo "${logdate} - Notify: Upn: ${user} - Ext: ${extensions[${user}]} - Teams: $status - 3cx: ${localstatus##*=}"
+							echo "${logdate} - Notify: <${user}> (${extensions[${user}]}) - Teams: $status - 3cx: ${localstatus##*=}"
 						fi
 					fi
 				else
-					echo "${logdate} - Notify: Upn: ${user} is not configured with an extension"
+					echo "${logdate} - Notify: <${user}> is not configured with an extension"
 				fi
 			else
-				echo "${logdate} - Notify: Upn: ${userid} not found in subscription list"
+				echo "${logdate} - Notify: <${userid}> not found in subscription list"
 			fi
 		else
 			echo "${logdate} - Notify: Error parsing response JSON..."
@@ -137,6 +163,8 @@ while read line ; do
 	#     Best probably is to setup a cron job
 	#
 	# check if a call is being set up or already connected
+	#  These lines are printed one-by-one on StdOut of the WebAPI process when a /showallcalls request is made
+	#  Only active calls are output
 	elif [[ "$line" =~ $busy_match ]] ; then
 		ext=${BASH_REMATCH[2]}
 		# process further if the extension is in the user mapping
@@ -150,9 +178,12 @@ while read line ; do
 #		else
 #			echo "${logdate} - Polling: <${ext}> is in a call but didn't find it in the user list"
 		fi
-	# the showallcalls command always prints <html>
+	# the showallcalls command always prints <html>... all entries from above separated by <br> ... </html> in a single line
+	#  The response to /showallcalls is also echoed on StdOut of the WebAPI process - in addition to the above
+	#  Since the current call states are represented in a one-line response, this can be used to determine if a call
+	#  is still active
 	elif [[ "$line" =~ "<html>" ]] ; then
-		# set any users to "available" who are still busy but not in the active call list
+		# set any users to *available* who are still busy but not in the active call list
 		for i in "${!statechange[@]}" ; do
 			# extension is not currently in a call, but the time it was is less than 1.5 * refresh period
 			if [ -z "$(echo $line | grep "DN=${i}")" -a $((now - statechange[$i])) -lt $((15 * refresh / 10)) ] ; then
@@ -160,9 +191,13 @@ while read line ; do
 				${TEAMS_PRESENCE} "${users[$i]}" available > /dev/null
 			fi
 		done
+	# this is handled by the WEB_API
+	elif [[ "$line" =~ "Validation:" ]] ; then
+		echo "${logdate} - ${line}"
 	else
+		# Log unhandled lines
 		if ! [[ "$line" =~ CURRENT_STATUS|Call|Ringing|Away|Available ]] && [ -n "$line" ] ; then
-			echo "${logdate} - Unknown: ${line}"
+			echo "${logdate} - Unhandled: ${line}"
 		fi
 	fi
 done < <(${WEB_API} ${WEB_API_PORT})
