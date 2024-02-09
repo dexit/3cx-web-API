@@ -63,28 +63,6 @@ while read line ; do
 	logdate=$(date +'%FT%T')
 #	echo $logdate - $line
 
-	# Teams subscriptions tend to get lost every now and then
-	if [ $((now - subscription_date)) -gt $subscription_refresh ] ; then
-		subscription_date=$now
-		id=$(${TEAMS_NOTIFY} | cut -d' ' -f1)
-		# check if the subscription still exists
-		if [ -z "${id}" ] ; then
-			echo "${logdate} - lost subscription!!!"
-			echo "${logdate} - (re)creating subscription"
-			${TEAMS_NOTIFY} "${userlist}"
-		# proactively renew subscription before it expires
-		else
-			echo "${logdate} - proactively reauthorizing subscription ${id} after ${subscription_refresh} seconds"
-			out=$(${TEAMS_NOTIFY} reauthorize "${id}")
-			if [[ "$out" =~ "Error" ]] ; then
-				echo "${logdate} - (re)creating subscription"
-				${TEAMS_NOTIFY} "${userlist}"
-			else
-				echo "${logdate} - recreated subscription: ${out}"
-			fi
-		fi
-	fi
-
 	# exit if the API server received a /stop command
 	if [[ "$line" =~ "Server Stop" ]] ; then
 		echo "${logdate} - deleting subscription"
@@ -96,17 +74,26 @@ while read line ; do
 		echo "${logdate} - subscription removed - ${line}"
 		echo "${logdate} - (re)creating subscription"
 		${TEAMS_NOTIFY} "${userlist}"
-	# process notification lifecycleEvent
-	elif [[ "$line" =~ "reauthorizationRequired" ]] ; then
-		echo "${logdate} - reauthorization required"
-		id=$(echo "${line}" | jq -r '.value[0].subscriptionId')
-		out=$(${TEAMS_NOTIFY} reauthorize "${id}")
-		if [[ "$out" =~ "Error" ]] ; then
+	# process notification lifecycleEvent - Teams subscriptions tend to get lost every now and then
+	elif [[ "$line" =~ "reauthorizationRequired" ]] || [ $((now - subscription_date)) -gt $subscription_refresh ]; then
+		id=$(${TEAMS_NOTIFY} | cut -d' ' -f1)
+		# check if the subscription still exists
+		if [ -z "${id}" ] ; then
+			echo "${logdate} - lost subscription!!!"
 			echo "${logdate} - (re)creating subscription"
 			${TEAMS_NOTIFY} "${userlist}"
+		# proactively renew subscription before it expires
 		else
-			echo "${logdate} - recreated subscription: ${out}"
+			echo "${logdate} - reauthorizing subscription ${id} after $((now - subscription_date)) seconds"
+			out=$(${TEAMS_NOTIFY} reauthorize "${id}")
+			if [[ "$out" =~ "Error" ]] ; then
+				echo "${logdate} - (re)creating subscription"
+				${TEAMS_NOTIFY} "${userlist}"
+			else
+				echo "${logdate} - recreated subscription: ${out}"
+			fi
 		fi
+		subscription_date=$now
 	# process notification lifecycleEvent
 	elif [[ "$line" =~ "missed" ]] ; then
 		echo "${logdate} - missed lifecycleEvent - ${line}"
