@@ -214,6 +214,11 @@ setup_notification() {
 		fi
 	done
 
+	if [ -z "${id_list}" ] ; then
+		echo "Error: no user found ${user_list}"
+		exit 1
+	fi
+
 	# create new public/private key-pair for payload encryption if it doesn't exist
 	if [ ! -f "$cert" -o ! -f "$key" ] ; then
 		openssl req -x509 -newkey rsa:2048 -keyout "$key" -out "$cert" -sha256 -days 365 -nodes -subj '/CN=localhost'
@@ -231,7 +236,13 @@ setup_notification() {
 			"expirationDateTime": "'${expiration}'",
 			"clientState": "AlexTest" }'
 
-	res=$(curl -s -X POST -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/subscriptions" -d "${subscription}" | jq -r '"\(.id) \(.expirationDateTime)"')
+	res=$(curl -s -X POST -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/subscriptions" -d "${subscription}")
+	error=$(echo $res | jq -r '.error | values | "\(.code): \(.message)"')
+	if [ -n "${error}" ] ; then
+		echo "Error: ${error}"
+		exit 1
+	fi
+	res=$(echo $res | jq -r '"\(.id) \(.expirationDateTime)"')
 	id=$(echo $res | cut -d' ' -f1)
 }
 
@@ -240,7 +251,6 @@ setup_notification() {
 # Main
 ###########
 check_access_token
-
 
 if [ "$user_list" = "delete" ] ; then
 	delete_active_notification
