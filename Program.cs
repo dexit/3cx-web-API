@@ -18,7 +18,6 @@ namespace WebAPI
             new Dictionary<string, Dictionary<string, string>>(
                 StringComparer.InvariantCultureIgnoreCase);
 
-        public static bool Stop { get; private set; }
         public static String Debugger;
         static void ReadConfiguration(string filePath)
         {
@@ -49,6 +48,7 @@ namespace WebAPI
         static void Bootstrap(string[] args)
         {
             String Port = "0";
+            Boolean running = true;
             Program.Debugger = "off";
             PhoneSystem.CfgServerHost = "127.0.0.1";
             PhoneSystem.CfgServerPort = int.Parse(iniContent["ConfService"]["ConfPort"]);
@@ -61,6 +61,7 @@ namespace WebAPI
                 iniContent["ConfService"]["confUser"],
                 iniContent["ConfService"]["confPass"]);
             ps.WaitForConnect(TimeSpan.FromSeconds(30));
+
             try
             {
                 //SampleStarter.StartSample(args);
@@ -113,7 +114,7 @@ namespace WebAPI
                 
                 Logger.WriteLine("Listening... on Port " + Port + " for Development");
                 Logger.WriteLine("To Stop open URL: http://127.0.0.1:" + Port + "/stop");
-                while (true)
+                while (running)
                 {
                     HttpListenerContext context = listener.GetContext();
                     HttpListenerRequest request = context.Request;
@@ -150,6 +151,8 @@ namespace WebAPI
                                 break;
                             default:
                                 {
+                                    contentType = "text/html";
+
                                     string connectionAsString(ActiveConnection ac)
                                     {
                                         return $"ID={ac.ID}:CCID={ac.CallConnectionID}:S={ac.Status}:DN={ac.DN.Number}:EP={ac.ExternalParty}:REC={ac.RecordingState}";
@@ -310,7 +313,7 @@ namespace WebAPI
                                                     {
                                                     mod3 = "true";
                                                 if (Enum.TryParse(queryStringArray[3], out RecordingAction ra))
-                                                    PhoneSystem.Root.GetByID<ActiveConnection>(i).ChangeRecordingState(ra);
+                                                        PhoneSystem.Root.GetByID<ActiveConnection>(i).ChangeRecordingState(ra);
                                                 else
                                                     throw new ArgumentOutOfRangeException("Invalid record action");
                                                     }
@@ -373,10 +376,9 @@ namespace WebAPI
                                             break;
                                         case "stop":
                                             {
-                                                respval = "<HTML><BODY> Server Stopped</BODY></HTML>";
-                                                listener.Stop();
+                                                respval = "<HTML><BODY>Server Stopped</BODY></HTML>";
+                                                running = false;
                                                 break;
-                                                throw new Exception("System Stopped");
                                             }
                                         default:
                                             break;
@@ -403,24 +405,20 @@ namespace WebAPI
                     }
                     catch (Exception ex)
                     {
-                        if (queryStringArray[1] == "Stop")
-                        {
-                            Logger.WriteLine("system Stopped");
-                            throw new Exception("System Stopped");
-                        }
-                        else
-                        {
-                            Logger.WriteLine(ex.Message);
-                            continue;
-                        }
+                        Logger.WriteLine(ex.Message);
+                        continue;
                     }
                 }
+                listener.Stop();
             }
 
             finally
             {
                 ps.Disconnect();
+                while (ps.Connected)
+                    Thread.Sleep(1000);
             }
+            PhoneSystem.Shutdown();
         }
 
         static string instanceBinPath;
