@@ -33,7 +33,7 @@ The script *presence_sync.sh* basically parses the output of the 3cx-web-api.
 * Teams status subscription is handled via *teams_presence_notification.sh*. Whenever a message is posted to the webhook Url it needs to be handled.
 * current 3cx calls are output whenever the */showallcalls* API endpoint is triggered => this should be called via cron
 
-Before running *presence_sync.sh* both scripts *set_teams_presence.sh* and *teams_presence_notification.sh* should be configured run manually (once) in order to setup authentication.
+Before running *presence_sync.sh* both scripts *set_teams_presence.sh* and *teams_presence_notification.sh* should be configured and run manually (once) in order to setup authentication.
 
 ## Running
 ````
