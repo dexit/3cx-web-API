@@ -30,12 +30,23 @@ cert="./tmp/azure.cert"
 key="./tmp/azure.key"
 user_file="./tmp/azure.users"
 
-if [ "$1" = '-h' -o "$1" = 'help' -o "$1" = '-help' -o "$1" = '--help' ] ; then
-	echo "Usage: $0 [ <user1> [ .. <userX>] | delete | reauthorize [<subscription-id>] ]"
+usage() {
+	echo "Usage: $0 [ <user1> [ .. <userX>] | delete | reauthorize [<subscription-id>] | get <user> ]"
 	exit 1
+}
+
+if [ "$1" = '-h' -o "$1" = 'help' -o "$1" = '-help' -o "$1" = '--help' ] ; then
+	usage
 elif [ "$1" = "reauthorize" ] ; then
 	user_list=$1
 	subscription=$2
+elif [ "$1" = "get" ] ; then
+	user_list=$1
+	if [ -z "${2}" ] ; then
+		echo "Error: <user> missing!"
+		usage
+	fi
+	user=$2
 else
 	user_list=$@
 fi
@@ -113,7 +124,7 @@ token_login() {
 token_refresh() {
 	# if Client_Secret is set...
 	if [ -n "${client_secret}" ] ; then
-		res=$(curl -s -X POST -H 'Content-Type: application/x-www-form-urlencoded' "${token_endpoint}" \
+		auth=$(curl -s -X POST -H 'Content-Type: application/x-www-form-urlencoded' "${token_endpoint}" \
 			--data "client_id=${client_id}" \
 			--data-urlencode "client_secret=${client_secret}" \
 			--data "scope=${scope}" \
@@ -121,19 +132,25 @@ token_refresh() {
 			--data-urlencode "refresh_token=${refresh_token}")
 	# ...also works without Client_Secret
 	else
-		res=$(curl -s -X POST -H 'Content-Type: application/x-www-form-urlencoded' "${token_endpoint}" \
+		auth=$(curl -s -X POST -H 'Content-Type: application/x-www-form-urlencoded' "${token_endpoint}" \
 			--data "client_id=${client_id}" \
 			--data "scope=${scope}" \
 			--data "grant_type=refresh_token" \
 			--data-urlencode "refresh_token=${refresh_token}")
 	fi
 
-	# write token to file
-	echo "${res}" | jq -r '.access_token' > "${access_token_file}"
-	echo "${res}" | jq -r '.refresh_token' > "${refresh_token_file}"
+	access_token=$(echo "${auth}" | jq -r '.access_token|values')
+	refresh_token=$(echo "${auth}" | jq -r '.refresh_token|values')
 
-	refresh_token=$(cat "${refresh_token_file}")
-	access_token=$(cat "${access_token_file}")
+	if [ -z "${access_token}" ] ; then
+		echo "Error: something went wrong"
+		echo "${auth}"
+		kill -s TERM $MYPID
+	fi
+
+	# write token to file
+	echo "${access_token}" > "${access_token_file}"
+	echo "${refresh_token}" > "${refresh_token_file}"
 }
 
 
@@ -158,12 +175,21 @@ get_user() {
 	# check cached id first
 	id=$(cat "${user_file}" | grep "${user}" | cut -d" " -f2)
 	if [ -z "$id" ] ; then
-		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users/${user}" | jq -r '.id')
-		echo "${user} ${id}"
-		echo "${user} ${id}" >> "${user_file}"
+		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users/${user}" | jq -r '.id'|values)
+		if [ -n "${id}" ] ; then
+			echo "${user} ${id}" >> "${user_file}"
+		else
+			echo "Error: no such user ${user}"
+		fi
 	fi
 }
 
+get_user_status() {
+	get_user
+	if [ -n "${id}" ] ; then
+		res=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence" | jq -r '.availability|values')
+	fi
+}
 
 # get active Subscription-Id (there seems only one subscription per session possible)
 get_active_notification() {
@@ -176,7 +202,7 @@ get_active_notification() {
 delete_active_notification() {
 	get_active_notification
 	if [ -n "$id" ] ; then
-		curl -s -X DELETE -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/subscriptions/${id}"
+		res=$(curl -s -X DELETE -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/subscriptions/${id}")
 	fi
 }
 
@@ -254,6 +280,8 @@ check_access_token
 
 if [ "$user_list" = "delete" ] ; then
 	delete_active_notification
+elif [ "$user_list" = "get" ] ; then
+	get_user_status
 elif [ "$user_list" = "reauthorize" ] ; then
 	if [ -z "${subscription}" ] ; then
 		get_active_notification
@@ -261,11 +289,9 @@ elif [ "$user_list" = "reauthorize" ] ; then
 		id=$subscription
 	fi
 	reauthorize_notification
-	echo $res
 elif [ -n "$user_list" ] ; then
 	setup_notification
-	echo $res
 else
 	get_active_notification
-	echo $res
 fi
+echo $res
