@@ -115,7 +115,7 @@ while read line ; do
 		if [ -n "$userid" ] ; then
 			# the user - userId should have been placed in a "user_file" when the notification was created
 			#  since the userId is static, it saves another API lookup call
-			user=$(cat "${user_file}" | grep "${userid}" | cut -d' ' -f1)
+			user=$(cat "${user_file}" | grep -m 1 "${userid}" | cut -d' ' -f1)
 			if [ -n "$user" ] ; then
 				# if the user is configured with an extension
 				if [ -n "${extensions[${user}]}" ] ; then
@@ -159,7 +159,7 @@ while read line ; do
 			# has there been a state change during the last refresh period?
 			if [ $((now - statechange[$ext])) -gt $((15 * refresh / 10)) -a ! "$ext" = "925" ] ; then
 				echo "${logdate} - Polling: Setting user <${users[$ext]}> (${ext}) Busy on Teams"
-				${TEAMS_PRESENCE} "${users[$ext]}" busy > /dev/null
+				${TEAMS_PRESENCE} "${users[$ext]}" Busy > /dev/null
 			fi
 			statechange[$ext]=$now
 #		else

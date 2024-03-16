@@ -117,6 +117,8 @@ token_login() {
 	# write token to file
 	echo "${access_token}" > "${access_token_file}"
 	echo "${refresh_token}" > "${refresh_token_file}"
+	chmod 600 "${access_token_file}"
+	chmod 600 "${refresh_token_file}"
 }
 
 
@@ -151,6 +153,8 @@ token_refresh() {
 	# write token to file
 	echo "${access_token}" > "${access_token_file}"
 	echo "${refresh_token}" > "${refresh_token_file}"
+	chmod 600 "${access_token_file}"
+	chmod 600 "${refresh_token_file}"
 }
 
 
@@ -170,12 +174,12 @@ check_access_token() {
 }
 
 
-# get User-Id from Azure-UPN
+# get User-Id by looking it up in proxyAddresses
 get_user() {
 	# check cached id first
-	id=$(cat "${user_file}" | grep "${user}" | cut -d" " -f2)
+	id=$(cat "${user_file}" | grep -m 1 "^${user}" | cut -d" " -f2)
 	if [ -z "$id" ] ; then
-		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users/${user}" | jq -r '.id'|values)
+		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users?\$filter=proxyAddresses/any(c:c+eq+'smtp:${user}')" | jq -r '.value[0].id|values')
 		if [ -n "${id}" ] ; then
 			echo "${user} ${id}" >> "${user_file}"
 		else
