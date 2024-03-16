@@ -179,11 +179,12 @@ get_user() {
 	# check cached id first
 	id=$(cat "${user_file}" | grep -m 1 "^${user}" | cut -d" " -f2)
 	if [ -z "$id" ] ; then
-		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users?\$filter=proxyAddresses/any(c:c+eq+'smtp:${user}')" | jq -r '.value[0].id|values')
+		# User.ReadBasic.All only permits a subset of attributes - proxyAddresses is NOT one of
+		id=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" "https://graph.microsoft.com/v1.0/users?\$filter=userprincipalname+eq+'${user}'+or+mail+eq+'${user}'" | jq -r '.value[0].id|values')
 		if [ -n "${id}" ] ; then
 			echo "${user} ${id}" >> "${user_file}"
 		else
-			echo "Error: no such user ${user}"
+			>&2 echo "Error: no such user ${user}"
 		fi
 	fi
 }
@@ -192,6 +193,8 @@ get_user_status() {
 	get_user
 	if [ -n "${id}" ] ; then
 		res=$(curl -s -X GET -H "Authorization: Bearer ${access_token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence" | jq -r '.availability|values')
+	else
+		res=""
 	fi
 }
 

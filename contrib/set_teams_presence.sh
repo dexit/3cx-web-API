@@ -7,6 +7,7 @@
 tenant='<M365 tenant ID>'
 client_id='<M365 client ID>'
 client_secret='<M365 client ID>'
+
 scope='https://graph.microsoft.com/.default'
 grant_type='client_credentials'
 
@@ -27,6 +28,7 @@ elif [ "$2" = "Busy" ] ; then
 fi
 
 user="$1"
+token_updated=""
 
 update_token()
 {
@@ -42,6 +44,7 @@ update_token()
 	fi
 	echo "${token}" > "${token_file}"
 	chmod 600 "${token_file}"
+	token_updated=1
 }
 
 get_token()
@@ -58,18 +61,21 @@ get_user()
 	# check cached id first
 	id=$(cat "${user_file}" | grep -m 1 "^${user}" | cut -d" " -f2)
 	if [ -z "$id" ] ; then
-		error=$(curl -s -X GET -H "Authorization: Bearer ${token}" -w "%{http_code}" -o "${response}" "https://graph.microsoft.com/v1.0/users?\$filter=proxyAddresses/any(c:c+eq+'smtp:${user}')")
+		# User.ReadBasic.All only permits a subset of attributes - proxyAddresses is NOT one of
+		error=$(curl -s -X GET -H "Authorization: Bearer ${token}" -w "%{http_code}" -o "${response}" "https://graph.microsoft.com/v1.0/users?\$filter=userprincipalname+eq+'${user}'+or+mail+eq+'${user}'")
 
-		if [ "$error" = "401" ] ; then
+		if [ "$error" = "401" -a -z "${token_updated}" ] ; then
 			update_token
 			get_user
-		fi
-
-		if [ "$error" = "404" ] ; then
+		elif [ "$error" = "404" ] ; then
 			echo "Error: <user> (${user}) not found!"
+			exit 1
+		elif [ "$error" = "403" ] ; then
+			echo "Error: insuffient permissions to read user attributes"
 			exit 1
 		elif [ "$error" != "200" ] ; then
 			echo "Error: unhandled HTTP ${error}"
+			cat "${response}"
 			exit 1
 		fi
 
@@ -84,17 +90,28 @@ get_user()
 	fi
 }
 
+set_status()
+{
+	if [ "${status//availability}" != "${status}" ] ; then
+		error=$(curl -s -X POST -w "%{http_code}" -o "${response}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence/setPresence" -d "${status}")
+	else
+		error=$(curl -s -X POST -w "%{http_code}" -o "${response}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence/clearPresence" -d "${status}")
+	fi
+
+	if [ "$error" = "401" -a -z "${token_updated}" ] ; then
+		update_token
+		set_status
+	elif [ "$error" = "403" ] ; then
+		echo "Error: insuffient permissions to set <${user}< presence"
+		exit 1
+	elif [ "$error" != "200" ] ; then
+		echo "Error: unhandled HTTP ${error}"
+		cat "${response}"
+	fi
+}
+
 get_token
 get_user
+set_status
 
-if [ "${status//availability}" != "${status}" ] ; then
-	error=$(curl -s -X POST -w "%{http_code}" -o "${response}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence/setPresence" -d "${status}")
-else
-	error=$(curl -s -X POST -w "%{http_code}" -o "${response}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" "https://graph.microsoft.com/v1.0/users/${id}/presence/clearPresence" -d "${status}")
-fi
-
-if [ "$error" != "200" ] ; then
-	echo "Error: unhandled HTTP ${error}"
-	cat "${response}"
-fi
 rm -f "${response}"
