@@ -9,7 +9,6 @@ using System.Reflection;
 using System.Linq;
 using System.Net;
 
-
 namespace WebAPI
 {
     class Program
@@ -19,7 +18,6 @@ namespace WebAPI
             new Dictionary<string, Dictionary<string, string>>(
                 StringComparer.InvariantCultureIgnoreCase);
 
-        public static bool Stop { get; private set; }
         public static String Debugger;
         static void ReadConfiguration(string filePath)
         {
@@ -50,6 +48,7 @@ namespace WebAPI
         static void Bootstrap(string[] args)
         {
             String Port = "0";
+            Boolean running = true;
             Program.Debugger = "off";
             PhoneSystem.CfgServerHost = "127.0.0.1";
             PhoneSystem.CfgServerPort = int.Parse(iniContent["ConfService"]["ConfPort"]);
@@ -62,351 +61,364 @@ namespace WebAPI
                 iniContent["ConfService"]["confUser"],
                 iniContent["ConfService"]["confPass"]);
             ps.WaitForConnect(TimeSpan.FromSeconds(30));
+
             try
             {
                 //SampleStarter.StartSample(args);
-			if (!HttpListener.IsSupported)
-            {
-                Logger.WriteLine("Windows XP SP2 or Server 2003 is required to use the HttpListener class.");
-                return;
-            }
+			    if (!HttpListener.IsSupported)
+                {
+                    Logger.WriteLine("Windows XP SP2 or Server 2003 is required to use the HttpListener class.");
+                    return;
+                }
             
-            // URI prefixes are required,
-            if (args.Length ==  0)
+                // URI prefixes are required,
+                if (args.Length ==  0)
                 {
                     Logger.WriteLine("No Port Submitted, use Generic Port: 8889");
                     Logger.WriteLine("Debug Mode off");
                     Port = "8889";
                 }
-            else   
+                else   
                 {
                     Logger.WriteLine($"Port Submitted, use Generic Port: {args[0]}");
                     Port = args[0];
-                if (args.GetUpperBound(0) == 0)
+                    if (args.GetUpperBound(0) == 0)
                     {
                         Logger.WriteLine("Debug Mode off");
                     }
-                else 
+                    else 
                     {
-                        if (args[1] == "debug") 
-                            {
-                                Program.Debugger = args[1];
-                                Logger.WriteLine("Debug Mode ON");
-                            }
+                        if (args[1] == "debug")
+                        {
+                            Program.Debugger = args[1];
+                            Logger.WriteLine("Debug Mode ON");
+                        }
                         else
-                            {
-                                Logger.WriteLine("Debug Mode off, wrong parameter");
-                            }
+                        {
+                            Logger.WriteLine("Debug Mode off, wrong parameter");
+                        }
                     }
                 }
-            var prefixes = new List<string>() { $"http://*:{Port}/" };
-            
-            
+                var prefixes = new List<string>() { $"http://*:{Port}/" };
+                string contentType = "text/html";
 
-            // Create a listener.
-            HttpListener listener = new HttpListener();
-            // Add the prefixes.
-            foreach (string s in prefixes)
-            {
-                Logger.WriteLine(s);
-                listener.Prefixes.Add(s);
-            }
+                // Create a listener.
+                HttpListener listener = new HttpListener();
+                // Add the prefixes.
+                foreach (string s in prefixes)
+                {
+                    Logger.WriteLine(s);
+                    listener.Prefixes.Add(s);
+                }
                 listener.Start();
                 
                 Logger.WriteLine("Listening... on Port " + Port + " for Development");
                 Logger.WriteLine("To Stop open URL: http://127.0.0.1:" + Port + "/stop");
-                while (true)
+                while (running)
                 {
                     HttpListenerContext context = listener.GetContext();
                     HttpListenerRequest request = context.Request;
-                    Logger.WriteLine(request.RawUrl);
 
-                    string documentContents;
-                    using (Stream receiveStream = request.InputStream)
-                    {
-                        using (StreamReader readStream = new StreamReader(receiveStream, Encoding.UTF8))
-                        {
-                            documentContents = readStream.ReadToEnd();
-                        }
-                    }
                     String url = request.RawUrl;
+                    string documentContents = "";
+                    if (request.HasEntityBody)
+                    {
+                        var reader = new StreamReader(request.InputStream, request.ContentEncoding);
+                        documentContents = reader.ReadToEnd();
+                        reader.Close();
+                        request.InputStream.Close();
+                        Console.WriteLine(documentContents);
+                    }
+
                     String[] queryStringArray = url.Split('/');
                     try
                     {
-
-                        string connectionAsString(ActiveConnection ac)
+                        string respval = "<HTML><BODY>Idle</BODY></HTML>";
+                        switch (request.HttpMethod)
                         {
-                            return $"ID={ac.ID}:CCID={ac.CallConnectionID}:S={ac.Status}:DN={ac.DN.Number}:EP={ac.ExternalParty}:REC={ac.RecordingState}";
-                        }
-                    string respval = "idle";
-                    string text;
-                    using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
-                    {
-                        text = reader.ReadToEnd();
-                    }           
-
-                        switch (queryStringArray[1])
-                        {
-                            case "showallcalls":
-                            {
-                                respval = getcall.showallcall();
-                            }
-                            break;
-                            case "makecall":
+                            case "POST":
                                 {
-                                    respval = makedirectcall.dial(queryStringArray[2],queryStringArray[3],queryStringArray[4]);
-                                }
-                                break;
-                            case "ready":
-                                {
-                                    string callerid = profiles.setstatus(queryStringArray[2], "avail");
-                                    string status = "";
-                                    if (callerid == "Available")
-                                        {
-                                            status = queuecontroll.status("login_all",queryStringArray[2]);
-                                        }
-                                    else
-                                        {
-                                            status = "false";
-                                        }
-                                    respval = status;
-                                }
-                                break;
-                            case "notready":
-                                {
-                                    string callerid = profiles.setstatus(queryStringArray[2], "custom1");
-                                    string status = "";
-                                    if (callerid == "Custom 1")
-                                        {
-                                            status = queuecontroll.status("logout_all",queryStringArray[2]);
-                                        }
-                                    else
-                                        {
-                                            status = "false";
-                                        }
-                                respval = status;
-                                }
-                                break;
-                            case "logout":
-                                {
-                                    string callerid = profiles.setstatus(queryStringArray[2], "away");
-                                    string status = "";
-                                    if (callerid == "Away")
-                                        {
-                                            status = queuecontroll.status("logout_all",queryStringArray[2]);
-                                        }
-                                    else
-                                        {
-                                            status = "false";
-                                        }
-                                    respval = status;
-                                }
-                                break;
-                            case "login":
-                                {
-                                    respval = queuecontroll.status(queryStringArray[2],queryStringArray[3]);
-                                }
-                                break;
-                            case "dnregs":
-                                {
-                                    respval =  getdnregs.status(queryStringArray[2]);
-                                }
-                                break;
-                            case "ondn":
-                                {
-                                    respval = getcallid.showcallid(queryStringArray[2]);
-                                }
-                                break;
-                            case "getcallerid":
-                                {
-                                    respval = getcallqueuenumber.showid(queryStringArray[2]);
-                                }
-                                break;
-                            case "drop":
-                                {
-                                    respval = dropcall.dropcallid(queryStringArray[2]);
-                                }
-                                break;
-                            case "answer":
-                                {
-                                    string wert = answer.call(queryStringArray[2]);
-                                    string mod2 = "";
-                                    Logger.WriteLine("Wert:"+ wert);
-                                    if (wert == "true")
-                                        {
-                                            mod2 = getcallid.showcallid(queryStringArray[2]);
-                                        }
-                                    else   
-                                        {
-                                            mod2 = "null";
-                                        }
-                                    respval = mod2;
-                                }
-                                break;
-                            case "record":
-                                {
-                                    string mod2 = "";
-                                    string mod3 = "";
-                                    using (var dn = PhoneSystem.Root.GetDNByNumber(queryStringArray[2]))
+                                    if (!string.IsNullOrEmpty(request.QueryString["validationToken"]))
                                     {
-                                        using (var connections = dn.GetActiveConnections().GetDisposer())
-                                        {
-                                            var alltakenconnections = connections.ToDictionary(x => x, y => y.OtherCallParties);
-                                            foreach (var kv in alltakenconnections)
-                                            {
-                                                var owner = kv.Key;
-                                                Console.ForegroundColor = ConsoleColor.Green;
-                                                Logger.WriteLine($"Call {kv.Key.CallID}:");
-                                                Console.ResetColor();
-                                                string result = connectionAsString(owner);
-                                                Logger.WriteLine(result);
-                                                if (result.Contains("S=Connected"))
-                                                {
-                                                    int cut = result.IndexOf(':');
-                                                    string mod = result.Substring(0, cut);
-                                                    mod2 = mod.Substring(3);
-                                                    Console.ForegroundColor = ConsoleColor.Red;
-                                                    Logger.WriteLine("Active Connection Number is:");
-                                                    Logger.WriteLine(mod2);
-                                                    Console.ResetColor();
-                                                }
-                                                else
-                                                {
-                                                    Console.ForegroundColor = ConsoleColor.Red;
-                                                    Logger.WriteLine("Active Connection Number is unknown");
-                                                    Console.ResetColor();
-                                                }
-                                            }
-                                        }
+                                        respval = request.QueryString["validationToken"];
                                     }
-                                    int i = 0;
-                                    try
-                                    {
-                                        i = System.Convert.ToInt32(mod2);
-                                    }
-                                    catch (FormatException)
-                                    {
-                                        // the FormatException is thrown when the string text does 
-                                        // not represent a valid integer.
-                                    }
-                                    catch (OverflowException)
-                                    {
-                                        // the OverflowException is thrown when the string is a valid integer, 
-                                        // but is too large for a 32 bit integer.  Use Convert.ToInt64 in
-                                        // this case.
-                                    }
-                                    Logger.WriteLine("Record on Extension:" + i);
-                                    if (i > 0)
-                                        {
-                                        mod3 = "true";
-                                    if (Enum.TryParse(queryStringArray[3], out RecordingAction ra))
-                                        PhoneSystem.Root.GetByID<ActiveConnection>(i).ChangeRecordingState(ra);
                                     else
-                                        throw new ArgumentOutOfRangeException("Invalid record action");
-                                        }
-                                    else
-                                        {
-                                            mod3 = "false";
-                                        }
-                                    respval = mod3;
+                                    {
+                                        respval = "";
+                                    }
+                                    contentType = "text/plain";
                                 }
                                 break;
-                            case "transfer":
-                                {
-                                     respval = transfercall.cold(queryStringArray[2], queryStringArray[3]);
-                                }
-                                break;
-                            case "park":
-                                {
-                                    respval = park.call(queryStringArray[2]);
-                                }
-                                break;
-                            case "unpark":
-                                {
-                                    string arg2 = "*10";
-                                    //string arg3 = "Soft";
-                                    respval = makedirectcall.dial(queryStringArray[2],arg2 ,queryStringArray[3]);
-                                    
-                                }
-                                break;
-                           case "atttrans":
-                                {
-                                    respval = atttrans.dotrans(queryStringArray[2]);
-                                }
-                                break;
-                            case "setstatus":
-                                {
-                                    respval = profiles.setstatus(queryStringArray[2], queryStringArray[3]);
-                                }
-                                break;
-                            case "save":
-                                {
-                                    respval = savechanges.Run(queryStringArray[2], queryStringArray[3],queryStringArray[4]);
-                                }
-                                break;
-                            case "showstatus":
-                                {
-                                    respval = profiles.show(queryStringArray[2]);
-                                }
-                                break;
-                            case "divert":
-                                {
-
-
-                                }
-                                break;
-                            case "clear":
-                                {
-                                    Console.WriteLine("Clearing the screen!");
-                                    Console.Clear();
-                                }
-                                break;
-                            case "stop":
-                                {
-                                    respval = "<HTML><BODY> Server Stopped</BODY></HTML>";
-                                    listener.Stop();
-                                    break;
-                                    throw new Exception("System Stopped");
-                                }
                             default:
+                                {
+                                    contentType = "text/html";
+
+                                    string connectionAsString(ActiveConnection ac)
+                                    {
+                                        return $"ID={ac.ID}:CCID={ac.CallConnectionID}:S={ac.Status}:DN={ac.DN.Number}:EP={ac.ExternalParty}:REC={ac.RecordingState}";
+                                    }
+
+                                    switch (queryStringArray[1])
+                                    {
+                                        case "showallcalls":
+                                        {
+                                            respval = getcall.showallcall();
+                                        }
+                                        break;
+                                        case "makecall":
+                                            {
+                                                respval = makedirectcall.dial(queryStringArray[2],queryStringArray[3],queryStringArray[4]);
+                                            }
+                                            break;
+                                        case "ready":
+                                            {
+                                                string callerid = profiles.setstatus(queryStringArray[2], "avail");
+                                                string status = "";
+                                                if (callerid == "Available")
+                                                    {
+                                                        status = queuecontroll.status("login_all",queryStringArray[2]);
+                                                    }
+                                                else
+                                                    {
+                                                        status = "false";
+                                                    }
+                                                respval = status;
+                                            }
+                                            break;
+                                        case "notready":
+                                            {
+                                                string callerid = profiles.setstatus(queryStringArray[2], "custom1");
+                                                string status = "";
+                                                if (callerid == "Custom 1")
+                                                    {
+                                                        status = queuecontroll.status("logout_all",queryStringArray[2]);
+                                                    }
+                                                else
+                                                    {
+                                                        status = "false";
+                                                    }
+                                            respval = status;
+                                            }
+                                            break;
+                                        case "logout":
+                                            {
+                                                string callerid = profiles.setstatus(queryStringArray[2], "away");
+                                                string status = "";
+                                                if (callerid == "Away")
+                                                    {
+                                                        status = queuecontroll.status("logout_all",queryStringArray[2]);
+                                                    }
+                                                else
+                                                    {
+                                                        status = "false";
+                                                    }
+                                                respval = status;
+                                            }
+                                            break;
+                                        case "login":
+                                            {
+                                                respval = queuecontroll.status(queryStringArray[2],queryStringArray[3]);
+                                            }
+                                            break;
+                                        case "dnregs":
+                                            {
+                                                respval =  getdnregs.status(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "ondn":
+                                            {
+                                                respval = getcallid.showcallid(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "getcallerid":
+                                            {
+                                                respval = getcallqueuenumber.showid(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "drop":
+                                            {
+                                                respval = dropcall.dropcallid(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "answer":
+                                            {
+                                                string wert = answer.call(queryStringArray[2]);
+                                                string mod2 = "";
+                                                Logger.WriteLine("Wert:"+ wert);
+                                                if (wert == "true")
+                                                    {
+                                                        mod2 = getcallid.showcallid(queryStringArray[2]);
+                                                    }
+                                                else   
+                                                    {
+                                                        mod2 = "null";
+                                                    }
+                                                respval = mod2;
+                                            }
+                                            break;
+                                        case "record":
+                                            {
+                                                string mod2 = "";
+                                                string mod3 = "";
+                                                using (var dn = PhoneSystem.Root.GetDNByNumber(queryStringArray[2]))
+                                                {
+                                                    using (var connections = dn.GetActiveConnections().GetDisposer())
+                                                    {
+                                                        var alltakenconnections = connections.ToDictionary(x => x, y => y.OtherCallParties);
+                                                        foreach (var kv in alltakenconnections)
+                                                        {
+                                                            var owner = kv.Key;
+                                                            Console.ForegroundColor = ConsoleColor.Green;
+                                                            Logger.WriteLine($"Call {kv.Key.CallID}:");
+                                                            Console.ResetColor();
+                                                            string result = connectionAsString(owner);
+                                                            Logger.WriteLine(result);
+                                                            if (result.Contains("S=Connected"))
+                                                            {
+                                                                int cut = result.IndexOf(':');
+                                                                string mod = result.Substring(0, cut);
+                                                                mod2 = mod.Substring(3);
+                                                                Console.ForegroundColor = ConsoleColor.Red;
+                                                                Logger.WriteLine("Active Connection Number is:");
+                                                                Logger.WriteLine(mod2);
+                                                                Console.ResetColor();
+                                                            }
+                                                            else
+                                                            {
+                                                                Console.ForegroundColor = ConsoleColor.Red;
+                                                                Logger.WriteLine("Active Connection Number is unknown");
+                                                                Console.ResetColor();
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                int i = 0;
+                                                try
+                                                {
+                                                    i = System.Convert.ToInt32(mod2);
+                                                }
+                                                catch (FormatException)
+                                                {
+                                                    // the FormatException is thrown when the string text does 
+                                                    // not represent a valid integer.
+                                                }
+                                                catch (OverflowException)
+                                                {
+                                                    // the OverflowException is thrown when the string is a valid integer, 
+                                                    // but is too large for a 32 bit integer.  Use Convert.ToInt64 in
+                                                    // this case.
+                                                }
+                                                Logger.WriteLine("Record on Extension:" + i);
+                                                if (i > 0)
+                                                    {
+                                                    mod3 = "true";
+                                                if (Enum.TryParse(queryStringArray[3], out RecordingAction ra))
+                                                        PhoneSystem.Root.GetByID<ActiveConnection>(i).ChangeRecordingState(ra);
+                                                else
+                                                    throw new ArgumentOutOfRangeException("Invalid record action");
+                                                    }
+                                                else
+                                                    {
+                                                        mod3 = "false";
+                                                    }
+                                                respval = mod3;
+                                            }
+                                            break;
+                                        case "transfer":
+                                            {
+                                                 respval = transfercall.cold(queryStringArray[2], queryStringArray[3]);
+                                            }
+                                            break;
+                                        case "park":
+                                            {
+                                                respval = park.call(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "unpark":
+                                            {
+                                                string arg2 = "*10";
+                                                //string arg3 = "Soft";
+                                                respval = makedirectcall.dial(queryStringArray[2],arg2 ,queryStringArray[3]);
+                                    
+                                            }
+                                            break;
+                                       case "atttrans":
+                                            {
+                                                respval = atttrans.dotrans(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "setstatus":
+                                            {
+                                                respval = profiles.setstatus(queryStringArray[2], queryStringArray[3]);
+                                            }
+                                            break;
+                                        case "save":
+                                            {
+                                                respval = savechanges.Run(queryStringArray[2], queryStringArray[3],queryStringArray[4]);
+                                            }
+                                            break;
+                                        case "showstatus":
+                                            {
+                                                respval = profiles.show(queryStringArray[2]);
+                                            }
+                                            break;
+                                        case "divert":
+                                            {
+
+
+                                            }
+                                            break;
+                                        case "clear":
+                                            {
+                                                Console.WriteLine("Clearing the screen!");
+                                                Console.Clear();
+                                            }
+                                            break;
+                                        case "stop":
+                                            {
+                                                respval = "<HTML><BODY>Server Stopped</BODY></HTML>";
+                                                running = false;
+                                                break;
+                                            }
+                                        default:
+                                            break;
+                                    }
+                                }
                                 break;
                         }
-                                // Obtain a response object.
-                                Logger.WriteLine(respval);
-                                HttpListenerResponse response = context.Response;
-                                // Allow cross origin requests
-                                response.AddHeader("Access-Control-Allow-Origin", "null");
-                                // Construct a response.
-                                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(respval);
-                                // Get a response stream and write the response to it.
-                                response.ContentLength64 = buffer.Length;
-                                System.IO.Stream output = response.OutputStream;
-                                output.Write(buffer, 0, buffer.Length);
-                                // You must close the output stream.
-                                output.Close();
 
+                        Logger.WriteLine(respval);
+
+                        // Obtain a response object.
+                        HttpListenerResponse response = context.Response;
+                        response.StatusCode = (int)HttpStatusCode.OK;
+                        // Allow cross origin requests
+                        response.AddHeader("Access-Control-Allow-Origin", "null");
+                        response.ContentType = contentType;
+                        // Construct a response.
+                        byte[] buffer = System.Text.Encoding.UTF8.GetBytes(respval);
+                        // Get a response stream and write the response to it.
+                        response.ContentLength64 = buffer.Length;
+                        response.OutputStream.Write(buffer, 0, buffer.Length);
+                        // You must close the output stream.
+                        response.OutputStream.Close();
                     }
                     catch (Exception ex)
                     {
-                        if (queryStringArray[1] == "Stop")
-                        {
-                            Logger.WriteLine("system Stopped");
-                            throw new Exception("System Stopped");
-                        }
-                        else
-                        {
-                            Logger.WriteLine(ex.Message);
-                            continue;
-                        }
+                        Logger.WriteLine(ex.Message);
+                        continue;
                     }
                 }
-  
-        }
+                listener.Stop();
+            }
 
             finally
             {
                 ps.Disconnect();
+                while (ps.Connected)
+                    Thread.Sleep(1000);
             }
+            PhoneSystem.Shutdown();
         }
 
         static string instanceBinPath;

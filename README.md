@@ -9,13 +9,12 @@ Sometimes i get a bug Mail, but no respone who is using it.
 
 ------------
 #### Supportet by v20 Beta2
-#### Supportet by v18 Alpha4
 
 ------------
 
 
 #### Requirements
-- Dot Net 5.0
+- Dot Net 7.0
 - 3CXPhoneSystem.ini (Debian User must fix the Path in the ini for the 3cxpscomcpp2.dll)
 
 ------------
@@ -25,16 +24,16 @@ Sometimes i get a bug Mail, but no respone who is using it.
 
 ##### Windows
 
-- Download from Microsoft Dot Net 5.0
+- Download from Microsoft Dot Net 7.0
 - Install Dot Net Core
 - run in cmd dotnet build WebAPICore.csproj
 
-##### Linux (Debian 10)
+##### Linux (Debian 12)
 
 ```bash
-wget https://packages.microsoft.com/config/debian/10/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
-sudo dpkg -i packages-microsoft-prod.deb
-sudo apt-get update; \ sudo apt-get install -y apt-transport-https && \ sudo apt-get update && \ sudo apt-get install -y dotnet-sdk-5.0
+wget https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb -O packages-microsoft-prod.deb
+dpkg -i packages-microsoft-prod.deb
+apt-get update && apt-get install -y dotnet-sdk-7.0
 ```
 
 **Bevore compile, you need to edit the **  *WebAPICore.csproj*
@@ -49,7 +48,7 @@ dotnet build WebAPICore.csproj
 
 #### Start the API
 Now you can start the API.
-it is in this path: bin\Debug\net5.0
+it is in this path: bin\Debug\net7.0
 You need the 3CXPhoneSystem.ini in your API folder
 
 **For Windows User, the API need Admin rights, so start cmd as Administrator.**
